@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Metrics Calculator</title>
+
+    <!-- Favicon 
+    <link href="img/favicon.ico" rel="icon">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='img/favicon.ico') }}">
+
+    <!-- Google Web Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&family=Red+Rose:wght@600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Icon Font Stylesheet -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.4/font/bootstrap-icons.css">
+
+    <!-- Libraries Stylesheet -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='lib/animate/animate.min.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='lib/owlcarousel/assets/owl.carousel.min.css') }}">
+
+    <!-- Customized Bootstrap Stylesheet -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <!-- Template Stylesheet -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+	<!-- Add Font Awesome CSS link -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+    .btn-primary,
+        .btn-secondary {
+            padding: 15px 20px;
+            color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 8px 6px -6px #555;
+            display: flex;
+            align-items: center;
+            justify-content: center; /* Center text horizontally */
+            font-size: 14px; /* Adjusted font size */
+            margin-bottom: 10px; /* Adjusted space between buttons */
+            background: linear-gradient(135deg, #3399ff, #0066cc);
+        }
+
+        .btn-primary:hover,
+        .btn-secondary:hover {
+            letter-spacing: 2px;
+            box-shadow: 0 12px 10px -10px #555;
+        }
+    </style>
+</head>
+
+<body>
+	<!-- Spinner Start -->
+    <div id="spinner"
+        class="show bg-white position-fixed translate-middle w-100 vh-100 top-50 start-50 d-flex align-items-center justify-content-center">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+    </div>
+    <!-- Spinner End -->
+
+
+
+    <!-- Brand Start -->
+    <div class="container-fluid bg-primary text-white pt-4 pb-5 d-none d-lg-flex">
+    <div class="container pb-2">
+        <div class="d-flex align-items-center justify-content-between">
+            <a href="index.html" class="h1 text-white mb-0 mx-auto text-center">Green <span class="text-dark">Metrics</span></a>
+        </div>
+    </div>
+	</div>
+
+    <!-- Brand End -->
+
+
+    <!-- Navbar Start -->
+<div class="container-fluid sticky-top">
+    <div class="container">
+        <nav class="navbar navbar-expand-lg navbar-light bg-white py-lg-0 px-lg-3">
+            <a href="index.html" class="navbar-brand d-lg-none">
+                <h1 class="text-primary m-0">Green <span class="text-dark">Metrics</span></h1>
+            </a>
+            <button type="button" class="navbar-toggler me-0" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarCollapse">
+                <div class="navbar-nav">
+                    <a href="/" class="nav-item nav-link">Home</a>
+                    <a href="/calculate" class="nav-item nav-link">Calculation</a>
+                    <a href="/downreport" class="nav-item nav-link active">Download Report</a>
+                    <div class="dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-bs-toggle="dropdown" aria-expanded="false">
+                            Graph
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="dropdownMenuLink">
+                            <li><a class="dropdown-item active" href="/graph">All Product VS Green Metrics</a></li>
+                            <li><a class="dropdown-item" href="/graph1">Green Metrics VS Single Product</a></li>
+                            
+                        </ul>
+                    </div>
+                    <a href="/logout" class="nav-item nav-link">Logout</a>
+                </div>
+                <div class="ms-auto d-none d-lg-flex">
+                    <a class="btn btn-sm-square btn-primary ms-2" href=""><i class="fab fa-facebook-f"></i></a>
+                    <a class="btn btn-sm-square btn-primary ms-2" href=""><i class="fab fa-twitter"></i></a>
+                    <a class="btn btn-sm-square btn-primary ms-2" href=""><i class="fab fa-linkedin-in"></i></a>
+                    <a class="btn btn-sm-square btn-primary ms-2" href=""><i class="fab fa-youtube"></i></a>
+                </div>
+            </div>
+        </nav>
+    </div>
+</div>
+<!-- Navbar End -->
+
+    
+	<!-- Page Header Start -->
+    <div class="container-fluid page-header py-5 mb-5 wow fadeIn" data-wow-delay="0.1s">
+        <div class="container text-center py-5 mt-4">
+            <h1 class="display-2 text-white mb-3 animated slideInDown">Green Metrics Reports</h1>
+            <nav aria-label="breadcrumb animated slideInDown">
+                
+            </nav>
+        </div>
+    </div>
+    <!-- Page Header End -->
+    
+<div class="container">
+        <div class="form-group mt-3">
+            <a href="/download/report/pdf" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download All Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <a href="/download/report_product_emy" class="btn btn-primary btn-lg" name="option">
+                    Click Here For Download EMY Report
+                    <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+                </a>
+            
+            <a href="/download/report_product_aef" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download AEF Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_rme" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download RME Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_mi" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download MI Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_si" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download SI Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_wi" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download WI Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_ton" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download TON Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            
+            
+            
+        </div>
+        <div class="col-md-6">
+            <a href="/download/report_product_ae" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download AE Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_ce" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download CE Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_pmi" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download PMI Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_oe" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download OE Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            
+            
+            <a href="/download/report_product_mp" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download MP Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            <a href="/download/report_product_efact" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download E-Factor Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+            
+            <a href="/download/report_product_tof" class="btn btn-primary btn-lg" name="option">
+                Click Here For Download TOF Report
+                <i class="fas fa-arrow-alt-circle-down ml-2"></i>
+            </a>
+        </div>
+    </div>
+
+    <a href="/calculate" class="btn btn-secondary btn-lg">
+       <style=" background-color: #2980b9">Back
+        <i class="fas fa-arrow-alt-circle-left ml-2"></i>
+    </a>
+</div>
+
+<br><br>
+    
+</div>
+</body>
+
+<!-- Footer Start -->
+    <div class="container-fluid footer position-relative bg-dark text-white-50 py-5 wow fadeIn" data-wow-delay="0.1s">
+        <div class="container">
+            <div class="row g-5 py-5">
+                <div class="col-lg-6 pe-lg-5">
+                    <a href="index.html" class="navbar-brand">
+                        <h1 class="h1 text-primary mb-0">Green <span class="text-white">Metrics</span></h1>
+                    </a>
+
+                    <p><i class="fa fa-map-marker-alt me-2"></i>Kolhapur, INDIA</p>
+                    <pre><i class="fa fa-phone-alt me-2"></i>+91 7219103091	<i class="fa fa-envelope me-2"></i>patilmrunali607@gmail.com</pre>
+					<pre><i class="fa fa-phone-alt me-2"></i>+91 8421854422	<i class="fa fa-envelope me-2"></i>malipradnya5@gmail.com</pre>
+					<pre><i class="fa fa-phone-alt me-2"></i>+91 8767280845	<i class="fa fa-envelope me-2"></i>supriyakumbhar18103@gmail.com</pre>
+					<pre><i class="fa fa-phone-alt me-2"></i>+91 95452311625	<i class="fa fa-envelope me-2"></i>priyakoneri224@gmail.com</pre>
+			
+                </div>
+                <div class="col-lg-6 ps-lg-5">
+                    <div class="row g-5">
+                        <div class="col-sm-6">
+                            <h4 class="text-light mb-4">Quick Links</h4>
+                            <a class="btn btn-link" href="/about">About Us</a>
+                            <a class="btn btn-link" href="/contact">Contact Us</a>
+                            
+                            
+                        </div>
+                        <div class="col-sm-6">
+                            <h4 class="text-light mb-4">Popular Links</h4>
+                            <a class="btn btn-link" href="/about">About Us</a>
+                            <a class="btn btn-link" href="/contact">Contact Us</a>
+                            
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Footer End -->
+
+
+   
+    
+    <!-- JavaScript Libraries -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='lib/wow/wow.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='lib/easing/easing.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='lib/waypoints/waypoints.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='lib/counterup/counterup.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='lib/owlcarousel/owl.carousel.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+
+</html>
