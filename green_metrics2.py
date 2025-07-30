@@ -18,19 +18,25 @@ import base64
 import random
 import string
 
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
+
 
 app = Flask(__name__, static_url_path='/static')
 
-app.secret_key = 'VCK'
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'Skk@1813'
-app.config['MYSQL_DB'] = 'green_metrics'
+app.secret_key = os.getenv('SECRET_KEY')
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
 
-DB_HOST = 'localhost'
-DB_USER = 'root'
-DB_PASSWORD = 'Skk@1813'
-DB_NAME = 'green_metrics'
+DB_HOST = os.getenv("DB_HOST")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+
 
 mysql = MySQL(app)
 
