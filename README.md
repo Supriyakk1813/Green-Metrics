@@ -63,8 +63,9 @@ MYSQL_HOST=localhost
 MYSQL_USER=root
 MYSQL_PASSWORD=your_mysql_password
 MYSQL_DB=green_metrics
-ADMIN_USERNAME=Admin
-ADMIN_PASSWORD=Admin@123
+ADMIN_USERNAME=your_admin_username
+ADMIN_PASSWORD=your_admin_password
+
 ```
 
 > ⚠️ Do **NOT** upload your `.env` file to GitHub. It is already listed in `.gitignore`.
@@ -134,11 +135,6 @@ Password: Admin@123
 
 > *(Add screenshots of the home page, admin panel, login page, molecule section, and report view if available)*
 
----
-
-## 📜 License
-
-This project is open-source and free to use under the [MIT License](LICENSE).
 
 ---
 
