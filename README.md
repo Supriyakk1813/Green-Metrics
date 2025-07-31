@@ -132,9 +132,37 @@ Password: Admin@123
 ---
 
 ## 📷 Screenshots
+Home Page
+![Home Page](static/screenshots/home.png)
 
-> *(Add screenshots of the home page, admin panel, login page, molecule section, and report view if available)*
+Login Page
+![Login Page](static/screenshots/login.png)
 
+Sign Up Page
+![Sign Up Page](static/screenshots/signup.png)
+
+Input Form for Calculations
+![Input Form 1](static/screenshots/input1.png)
+![Input Form 2](static/screenshots/input2.png)
+![Input Form 3](static/screenshots/input3.png)
+![Input Form 4](static/screenshots/input4.png)
+
+Green Metrics Output Table
+![Output 1](static/screenshots/output1.png)
+![Output 2](static/screenshots/output2.png)
+![Output 3](static/screenshots/output3.png)
+![Output 4](static/screenshots/output4.png)
+![Output 5](static/screenshots/output5.png)
+![Output 6](static/screenshots/output6.png)
+![Output 7](static/screenshots/output7.png)
+
+Report Generation Page
+![Report 1](static/screenshots/report1.png)
+![Report 2](static/screenshots/report2.png)
+
+Graphical Analysis
+![Graph 1](static/screenshots/graph1.png)
+![Graph 2](static/screenshots/graph2.png)
 
 ---
 
