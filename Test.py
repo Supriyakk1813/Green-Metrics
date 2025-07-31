@@ -1,62 +1,59 @@
-from flask import Flask, render_template, request, session, Response,redirect,url_for
-#from flask_mysqldb import MySQL
-from flask_mysql_connector import MySQL
-from fpdf import FPDF
-from datetime import datetime
-import sympy
-from reportlab.lib.pagesizes import letter, portrait
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-from datetime import date
-from decimal import Decimal
-import io
+import os
 import re
-import matplotlib.pyplot as plt
-import pymysql
-from io import BytesIO
+import io
 import base64
 import random
 import string
+import sympy
+import mysql.connector
+import matplotlib.pyplot as plt
+from fpdf import FPDF
+from datetime import datetime, date
+from decimal import Decimal
 from dotenv import load_dotenv
-import os
+from flask import Flask, render_template, request, session, Response, redirect, url_for, flash
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, portrait
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from io import BytesIO
 
-app = Flask(__name__, static_url_path='/static')
 load_dotenv()
 
-app.secret_key = os.getenv('SECRET_KEY')
-app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
-app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
-app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
+app = Flask(__name__, static_url_path='/static')
+app.secret_key = os.getenv("SECRET_KEY")
 
-DB_HOST = os.getenv('MYSQL_HOST')
-DB_USER = os.getenv('MYSQL_USER')
-DB_PASSWORD = os.getenv('MYSQL_PASSWORD')
-DB_NAME = os.getenv('MYSQL_DB')
+# MySQL config
+DB_HOST = os.getenv("MYSQL_HOST")
+DB_USER = os.getenv("MYSQL_USER")
+DB_PASSWORD = os.getenv("MYSQL_PASSWORD")
+DB_NAME = os.getenv("MYSQL_DB")
 
+# Connect using mysql.connector
+def get_db_connection():
+    return mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
 
-mysql = MySQL(app)
-
-def get_product_list():
-    cursor = mysql.connection.cursor()
-    query = "SELECT name FROM green_metrics.molecules"  
-    cursor.execute(query)
-    rows = cursor.fetchall()
-    cursor.close()
-    return [row[0] for row in rows]
+product_list = [
+    "4-NO2", "2-NO2", "3-NO2", "2-Cl", "3-Cl", "4-Cl", "2-Br", "3-Br",
+    "4-Br", "2-OH", "4-OH", "4-OMe", "H", "4-Me", "4-OH-3-OMe", "3 4 5-OMe3",
+    "4-N N-Me2", "4-CN", "2-Thiophene carboxaldehyde", "5-Br-2-thiocarboxaldehyde",
+    "Indole-3-carboxaldehyde", "Furfuraldehyde", "1-Naphthaldehyde", "Cuminaldehyde",
+    "Cyclohexanone", "Cyclopentanone", "Ethyl methyl ketone", "Acetone", "Isatin",
+    "Benzaldehyde", "3 4 5(OCH3)", "N N-Dimethyl", "2-Thiophene", "Vanilin", "3 4 5(OME)3"
+]
 
 @app.route('/')
 def home():
     return render_template('index.html')
-    
+
 @app.route('/about')
 def about():
     return render_template('about.html')
-
-def generate_token(length=8):
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for i in range(length))
 
 @app.route('/ulogin', methods=['GET', 'POST'])
 def ulogin():
@@ -64,29 +61,28 @@ def ulogin():
     if request.method == 'POST' and 'username' in request.form and 'password' in request.form:
         username = request.form.get('username')
         password = request.form.get('password')
-        
-        if username == os.getenv('ADMIN_USERNAME') and password == os.getenv('ADMIN_PASSWORD'):
+
+        if username == os.getenv("ADMIN_USERNAME") and password == os.getenv("ADMIN_PASSWORD"):
             session['loggedin'] = True
             session['username'] = username
-            msg = 'Admin logged in successfully!'
-            return redirect(url_for('admin'))  
-            
-        cursor = mysql.connection.cursor()
-        cursor.execute('SELECT * FROM green_metrics.userlog WHERE username = %s AND password = %s', (username, password,))
+            return redirect(url_for('admin'))
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM userlog WHERE username = %s AND password = %s', (username, password))
         account = cursor.fetchone()
-        print(account)  
-        
+        cursor.close()
+        conn.close()
+
         if account:
             session['loggedin'] = True
             session['id'] = account[0]
             session['username'] = account[1]
-            session['password'] = account[2]
-            msg = 'Logged in successfully! Enjoy your experience with us!'
             return redirect(url_for('calculate'))
         else:
             msg = 'Incorrect username / password!'
+
     return render_template('userlogin.html', msg=msg)
-    
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -95,12 +91,12 @@ def register():
         username = request.form['username']
         email = request.form['email']
         password = request.form['password']
-        
-        cursor = mysql.connection.cursor()
-        cursor.execute('SELECT * FROM green_metrics.userlog WHERE username = %s', (username,))
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM userlog WHERE username = %s', (username,))
         account = cursor.fetchone()
-        print(account)  # Add this line for debugging
-        
+
         if account:
             msg = 'Account already exists!'
         elif not re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', email):
@@ -110,95 +106,102 @@ def register():
         elif not username or not password or not email:
             msg = 'Please fill out the form!'
         else:
-            cursor.execute('INSERT INTO green_metrics.userlog VALUES (NULL, %s, %s, %s)', (username, password, email,))
-            mysql.connection.commit()
+            cursor.execute('INSERT INTO userlog VALUES (NULL, %s, %s, %s)', (username, password, email))
+            conn.commit()
             msg = 'You have successfully registered! Now You Can Login...'
+        cursor.close()
+        conn.close()
     elif request.method == 'POST':
         msg = 'Please fill out the form!'
-        
+
     return render_template('userlogin2.html', msg=msg)
-    
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
-    msg = ''
-
     if request.method == 'POST':
-        email = request.form.get('email')  
+        email = request.form.get('email')
         return render_template('forgot_password.html', email=email)
-   
-    return render_template('forgot_password.html')  # Render the form if it's a GET request
-    
+    return render_template('forgot_password.html')
 
 @app.route('/for_pass', methods=['POST'])
 def for_pass():
     msg = ''
-    email = ''
-    password = ''
+    email = request.form.get('email')
+    password = request.form.get('password')
 
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        cursor = mysql.connection.cursor()
-        cursor.execute('UPDATE green_metrics.userlog SET password = %s WHERE email = %s', (password, email,))
-        mysql.connection.commit()
-
-        msg = 'Password reset successfully. You can now log in with your new password.'
-    else:
-        msg = 'Username not found. Please check the provided username.'
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE userlog SET password = %s WHERE email = %s', (password, email))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    msg = 'Password reset successfully. You can now log in with your new password.'
 
     return render_template('forgot_password2.html', email=email, password=password, msg=msg)
-    
 
 @app.route('/logout')
 def logout():
-	session.pop('loggedin', None)
-	session.pop('id', None)
-	session.pop('username', None)
-	return redirect(url_for('ulogin'))
-    
-    
+    session.pop('loggedin', None)
+    session.pop('id', None)
+    session.pop('username', None)
+    return redirect(url_for('ulogin'))
+
 @app.route('/admin', methods=['POST', 'GET'])
 def admin():
-    cursor = mysql.connection.cursor()
-    query = "SELECT * FROM green_metrics.molecules"
-    cursor.execute(query)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM molecules")
     molecules = cursor.fetchall()
+    cursor.close()
+    conn.close()
     return render_template('admin.html', molecules=molecules)
 
 @app.route('/add_molecule', methods=['POST'])
 def add_molecule():
     if request.method == 'POST':
         name = request.form['name']
-        cursor = mysql.connection.cursor()
-        query = 'INSERT INTO green_metrics.molecules(name) VALUES (%s)'
-        cursor.execute(query, (name,))
-        mysql.connection.commit()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO molecules(name) VALUES (%s)', (name,))
+        conn.commit()
+        cursor.close()
+        conn.close()
         flash('Molecule added successfully')
         return redirect(url_for('admin'))
-       
+
 @app.route('/delete/<mname>', methods=['POST', 'GET'])
 def delete_molecule(mname):
-    cursor = mysql.connection.cursor()
-    query = 'DELETE FROM green_metrics.molecules WHERE name = %s'
-    cursor.execute(query, (mname,))
-    mysql.connection.commit()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM molecules WHERE name = %s', (mname,))
+    conn.commit()
+    cursor.close()
+    conn.close()
     flash('Molecule Removed Successfully')
     return redirect(url_for('admin'))
-    
-    
+
 @app.route('/abc')
 def abc():
     print("HELLO")
     return render_template('404.html')
-    
-    
+
 @app.route('/contact')
 def contact():
     print("HELLO")
     return render_template('contact.html')
+
     
-    
+def get_product_list():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "SELECT name FROM molecules"  
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [row[0] for row in rows]
+
+
 
 @app.route('/calculate', methods=['GET', 'POST'])
 def calculate():
@@ -227,7 +230,7 @@ def calculate():
 
         if not product_name:
             msg = "First Choose The Product Name"
-            return render_template('green_metrics.html', product_list=product_list, msg=msg)
+            return render_template('html', product_list=product_list, msg=msg)
 
 
         # Get values from the form
@@ -262,7 +265,7 @@ def calculate():
         if any(val is None or val == '' for val in (mass_of_product, mass_of_non_benign_reactants, molecular_weight_of_product, total_molecular_weight_of_reactants, yeild, amount_of_carbon, total_carbon_reactants, mass_of_isolated_product, 
         total_mass_of_reactants, total_mass_of_all_solvents_during_reaction, total_mass_used, mass_of_raw_material, total_mass_of_solvent, total_mass_of_water, mass_of_desrired_product, amount_of_catalyst, time)):
             msg = 'Please fill all the inputs'
-            return render_template('green_metrics.html', product_list=product_list, msg = msg)
+            return render_template('html', product_list=product_list, msg = msg)
 
         
 
@@ -293,7 +296,7 @@ def calculate():
 
         # Check if the evaluated values are not None
         #if mass_of_product_eval is None or mass_of_non_benign_reactants_eval is None:
-            #return render_template('green_metrics.html', product_list=product_list)
+            #return render_template('html', product_list=product_list)
 
         # CONVERT THE VALUES TO FLOAT
         mass_of_product = float(mass_of_product_eval)
@@ -358,20 +361,22 @@ def calculate():
        
         print("mass_of_product :",mass_of_product)
         print("si :",type(si))
-        cursor = mysql.connection.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
         
         # SAVE TO THE REPORT TABLE
         
-        query = "INSERT INTO green_metrics.report(product_name,  emy, ae, aef, ce, rme, oe, pmi, mi, mp, e_factor, si, wi, ton, tof, yeild, time, user) VALUES (%s,  ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3),%s, %s, %s)"
+        query = "INSERT INTO report(product_name,  emy, ae, aef, ce, rme, oe, pmi, mi, mp, e_factor, si, wi, ton, tof, yeild, time, user) VALUES (%s,  ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3), ROUND(%s, 3),%s, %s, %s)"
         val = (product_name, emy, ae, aef, ce, rme, oe, pmi, mi, mp, e_factor, si, wi, ton, tof, yeild, time, user)
         cursor.execute(query, val)
        
-        mysql.connection.commit()
+        mysql.conn.commit()
         cursor.close()
+        conn.close()
 
         
-        return render_template('green_metrics.html', emy=emy, ae=ae, aef=aef, ce=ce, rme=rme, oe=oe, pmi=pmi, mi=mi, mp=mp, e_factor=e_factor, si=si, wi=wi, ton=ton, tof=tof, product_list=product_list, 
+        return render_template('html', emy=emy, ae=ae, aef=aef, ce=ce, rme=rme, oe=oe, pmi=pmi, mi=mi, mp=mp, e_factor=e_factor, si=si, wi=wi, ton=ton, tof=tof, product_list=product_list, 
                                product_name=product_name,
                                mass_of_product=mass_of_product,
                                mass_of_non_benign_reactants=mass_of_non_benign_reactants,
@@ -391,7 +396,7 @@ def calculate():
                                amount_of_catalyst=amount_of_catalyst,
                                time=time)
 
-    return render_template('green_metrics.html', emy=emy, ae=ae, aef=aef, ce=ce, rme=rme, oe=oe, pmi=pmi, mi=mi, mp=mp, e_factor=e_factor, si=si, wi=wi, ton=ton, tof=tof, product_list=product_list, 
+    return render_template('html', emy=emy, ae=ae, aef=aef, ce=ce, rme=rme, oe=oe, pmi=pmi, mi=mi, mp=mp, e_factor=e_factor, si=si, wi=wi, ton=ton, tof=tof, product_list=product_list, 
                            product_name=session.get('product_name'),
                            mass_of_product=session.get('mass_of_product'),
                            mass_of_non_benign_reactants=session.get('mass_of_non_benign_reactants'),
@@ -633,8 +638,9 @@ def download_report():
 
     now = date.today()
 
-    cursor = mysql.connection.cursor()
-    cursor.execute("select * from green_metrics.report")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("select * from report")
     result = cursor.fetchall()
 
     pdf = FPDF(orientation='P')
@@ -708,6 +714,7 @@ def download_report():
     pdf.set_font('Times', '', 10.0)
     pdf.cell(page_width, 0.0, '- end of report -', align='C')
     cursor.close()
+    conn.close()
 
     response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
     response.headers['Content-Disposition'] = 'attachment;filename=green_metrics_report.pdf'
@@ -716,547 +723,18 @@ def download_report():
 
 @app.route('/download/report_product_emy', methods=['POST', 'GET'])
 def download_report_emy():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.emy FROM green_metrics.report")
-	print("Query executed.")
-	result = cursor.fetchall()
-	print("Fetched records:", result)
-	
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics EMY Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-	#pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "EMY", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		#pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-	pdf.ln(10)
-	pdf.cell(th)
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-	cursor.close()
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=EMYResults.pdf'
-	return response
-
-@app.route('/download/report_product_ae', methods=['POST', 'GET'])
-def download_report_ae():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.ae FROM green_metrics.report")
-	result = cursor.fetchall()
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics AE Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "AE", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-	pdf.ln(10)
-	pdf.cell(th)
-
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=AEResults.pdf'
-
-	return response
-
-@app.route('/download/report_product_aef', methods=['POST', 'GET'])
-def download_report_aef():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.aef FROM green_metrics.report")
-	result = cursor.fetchall()
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-	pdf = FPDF()
-	pdf.add_page()
-	page_width = pdf.w - 2 * pdf.l_margin
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics AEF Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "AEF", border=1)
-	pdf.ln(th)
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-	pdf.ln(10)
-	pdf.cell(th)
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-	cursor.close()
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=AEFResults.pdf'
-
-	return response
-
-
-@app.route('/download/report_product_ton', methods=['POST', 'GET'])
-def download_report_ton():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.ton FROM green_metrics.report")
-	result = cursor.fetchall()
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics TON Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "TON", border=1)
-	pdf.ln(th)
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-	pdf.ln(10)
-	pdf.cell(th)
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=TONResults.pdf'
-
-	return response
-
-
-@app.route('/download/report_product_ce', methods=['POST', 'GET'])
-def download_report_ce():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.ce FROM green_metrics.report")
-	result = cursor.fetchall()
-
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics CE Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "CE", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-
-		pdf.ln(th)
-	pdf.ln(10)
-	pdf.cell(th)
-
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=CEResults.pdf'
-
-	return response
-
-
-@app.route('/download/report_product_rme', methods=['POST', 'GET'])
-def download_report_rme():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.rme FROM green_metrics.report")
-	result = cursor.fetchall()
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics RME Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "RME", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-
-		pdf.ln(th)
-
-	pdf.ln(10)
-	pdf.cell(th)
-
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=RMEResults.pdf'
-
-	return response
-
-
-@app.route('/download/report_product_wi', methods=['POST', 'GET'])
-def download_report_wi():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.wi FROM green_metrics.report")
-	result = cursor.fetchall()
-
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics WI Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "WI", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-	pdf.ln(10)
-	pdf.cell(th)
-
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=WIResults.pdf'
-	return response
-
-
-@app.route('/download/report_product_oe', methods=['POST', 'GET'])
-def download_report_oe():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.oe FROM green_metrics.report")
-	result = cursor.fetchall()
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
-	pdf = FPDF()
-	pdf.add_page()
-
-	page_width = pdf.w - 2 * pdf.l_margin
-
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics OE Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "OE", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-
-	pdf.ln(10)
-	pdf.cell(th)
-
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=OEResults.pdf'
-
-	return response
-
-
-@app.route('/download/report_product_pmi', methods=['POST', 'GET'])
-def download_report_pmi():
     report_title = request.args.get('title', 'Green Metrics Report')
-    cursor = mysql.connection.cursor()
-    cursor.execute("SELECT report.product_name, report.pmi FROM green_metrics.report")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.emy FROM report")
+    print("Query executed.")
     result = cursor.fetchall()
-
+    print("Fetched records:", result)
+	
     if not result:
-    	cursor.close()
-    	return "No data found for the selected product."
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
     pdf = FPDF()
     pdf.add_page()
 
@@ -1266,7 +744,7 @@ def download_report_pmi():
     s = pdf.font_size
     pdf.cell(page_width, 0.0, f"{report_title}", align='C')
     pdf.ln(s)
-    pdf.cell(page_width, 0.0, f"Report on Green Metrics PMI Calculations", align='C')
+    pdf.cell(page_width, 0.0, f"Report on Green Metrics EMY Calculations", align='C')
     pdf.ln(10)
     pdf.set_font('Times', 'B', 12.0)
     current_date = date.today().strftime("%d/%m/%Y")
@@ -1277,123 +755,690 @@ def download_report_pmi():
     pdf.ln(1)
     th = pdf.font_size  # Define th here
     i = 1
+    #pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "EMY", border=1)
+    pdf.ln(th)
 
+    for col in result:
+	#pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)  # Green
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)  # Light Green
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)  # Yellow
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)  # Orange
+            else:
+                pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
+
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+    pdf.ln(10)
+    pdf.cell(th)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+    cursor.close()
+    conn.close()
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=EMYResults.pdf'
+    return response
+
+@app.route('/download/report_product_ae', methods=['POST', 'GET'])
+def download_report_ae():
+    report_title = request.args.get('title', 'Green Metrics Report')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.ae FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+
+    pdf.cell(page_width, 0.0, f"{report_title}", align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics AE Calculations", align='C')
+    pdf.ln(10)
+
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.set_font('Times', 'B', 12.0)
+    pdf.cell(page_width, 0.0, 'Date: ' + current_date, align='L')
+    pdf.ln(10)
+
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+
+    pdf.cell(20, th, "S.No", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "AE", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+
+        ae_value = float(col[1])
+        if ae_value >= 90:
+            pdf.set_fill_color(0, 255, 0)  # Green
+        elif 80 <= ae_value < 90:
+            pdf.set_fill_color(144, 238, 144)  # Light Green
+        elif 70 <= ae_value < 80:
+            pdf.set_fill_color(255, 255, 0)  # Yellow
+        elif 60 <= ae_value < 70:
+            pdf.set_fill_color(255, 165, 0)  # Orange
+        else:
+            pdf.set_fill_color(255, 99, 71)  # Red
+
+        pdf.cell(col_width, th, str(ae_value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+
+    cursor.close()
+    conn.close()
+
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=AEResults.pdf'
+
+    return response
+
+
+@app.route('/download/report_product_aef', methods=['POST', 'GET'])
+def download_report_aef():
+    report_title = request.args.get('title', 'Green Metrics Report')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.aef FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+
+    pdf.cell(page_width, 0.0, f"{report_title}", align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics AEF Calculations", align='C')
+    pdf.ln(10)
+
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.set_font('Times', 'B', 12.0)
+    pdf.cell(page_width, 0.0, 'Date: ' + current_date, align='L')
+    pdf.ln(10)
+
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+
+    pdf.cell(20, th, "S.No", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "AEF", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)  # Green
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)  # Light Green
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)  # Yellow
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)  # Orange
+            else:
+                pdf.set_fill_color(255, 99, 71)  # Tomato Red
+
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+
+    cursor.close()
+    conn.close()
+
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=AEFResults.pdf'
+
+    return response
+
+
+@app.route('/download/report_product_ton', methods=['POST', 'GET'])
+def download_report_ton():
+    report_title = request.args.get('title', 'Green Metrics Report')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.ton FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, f"{report_title}", align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics TON Calculations", align='C')
+    pdf.ln(10)
+
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.set_font('Times', 'B', 12.0)
+    pdf.cell(page_width, 0.0, 'Date: ' + current_date, align='L')
+    pdf.ln(10)
+
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+
+    pdf.cell(20, th, "S.No", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "TON", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+
+    cursor.close()
+    conn.close()
+
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=TONResults.pdf'
+    return response
+
+@app.route('/download/report_product_ce', methods=['POST', 'GET'])
+def download_report_ce():
+    report_title = request.args.get('title', 'Green Metrics Report')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.ce FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, f"{report_title}", align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics CE Calculations", align='C')
+    pdf.ln(10)
+
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.set_font('Times', 'B', 12.0)
+    pdf.cell(page_width, 0.0, 'Date: ' + current_date, align='L')
+    pdf.ln(10)
+
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+
+    pdf.cell(20, th, "S.No", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "CE", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+
+    cursor.close()
+    conn.close()
+
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=CEResults.pdf'
+    return response
+
+@app.route('/download/report_product_rme', methods=['POST', 'GET'])
+def download_report_rme():
+    report_title = request.args.get('title', 'Green Metrics Report')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.rme FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, f"{report_title}", align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics RME Calculations", align='C')
+    pdf.ln(10)
+
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.set_font('Times', 'B', 12.0)
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+
+    pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "RME", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+
+    cursor.close()
+    conn.close()
+
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=RMEResults.pdf'
+    return response
+
+
+@app.route('/download/report_product_wi', methods=['POST', 'GET'])
+def download_report_wi():
+    report_title = request.args.get('title', 'Green Metrics Report')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.wi FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, f"{report_title}", align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics WI Calculations", align='C')
+    pdf.ln(10)
+
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.set_font('Times', 'B', 12.0)
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+
+    pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "WI", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] if col[0] is not None else ""
+        pdf.cell(col_width, th, product_name, border=1)
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+
+    cursor.close()
+    conn.close()
+
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=WIResults.pdf'
+    return response
+
+
+@app.route('/download/report_product_oe', methods=['POST', 'GET'])
+def download_report_oe():
+    report_title = request.args.get('title', 'Green Metrics Report')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.oe FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, report_title, align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics OE Calculations", align='C')
+    pdf.ln(10)
+    pdf.set_font('Times', 'B', 12.0)
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+    pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "OE", border=1)
+    pdf.ln(th)
+
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] or ""
+        pdf.cell(col_width, th, product_name, border=1)
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
+
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+    cursor.close()
+    conn.close()
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=OEResults.pdf'
+    return response
+
+
+@app.route('/download/report_product_pmi', methods=['POST', 'GET'])
+def download_report_pmi():
+    report_title = request.args.get('title', 'Green Metrics Report')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.pmi FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, report_title, align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics PMI Calculations", align='C')
+    pdf.ln(10)
+    pdf.set_font('Times', 'B', 12.0)
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
     pdf.cell(20, th, "sNo", border=1)
     pdf.cell(col_width, th, "Product", border=1)
     pdf.cell(col_width, th, "PMI", border=1)
     pdf.ln(th)
 
+    i = 1
     for col in result:
-    	pdf.cell(20, th, str(i), border=1)
-    	product_name = col[0] if col[0] is not None else ""
-    	pdf.cell(col_width, th, product_name, border=1)
-    	for value in col[1:]:
-    		value = float(value)
-    		if value >= 90:
-    			pdf.set_fill_color(0, 255, 0)  # Green
-    		elif 80 <= value < 90:
-    			pdf.set_fill_color(144, 238, 144)  # Light Green
-    		elif 70 <= value < 80:
-    			pdf.set_fill_color(255, 255, 0)  # Yellow
-    		elif 60 <= value < 70:
-    			pdf.set_fill_color(255, 165, 0)  # Orange
-    		else:
-    			pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-    		pdf.cell(col_width, th, str(value), border=1, fill=True)
-    	pdf.ln(th)
-    pdf.ln(10)
-    pdf.cell(th)
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] or ""
+        pdf.cell(col_width, th, product_name, border=1)
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
 
+    pdf.ln(10)
     pdf.set_font('Times', '', 10.0)
     pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
     cursor.close()
-
+    conn.close()
     response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
     response.headers['Content-Disposition'] = 'attachment;filename=PMIResults.pdf'
-
     return response
 
 
 @app.route('/download/report_product_mi', methods=['POST', 'GET'])
 def download_report_mi():
-	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.mi FROM green_metrics.report")
-	result = cursor.fetchall()
+    report_title = request.args.get('title', 'Green Metrics Report')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.mi FROM report")
+    result = cursor.fetchall()
 
-	if not result:
-		cursor.close()
-		return "No data found for the selected product."
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
 
-	pdf = FPDF()
-	pdf.add_page()
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, report_title, align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics MI Calculations", align='C')
+    pdf.ln(10)
+    pdf.set_font('Times', 'B', 12.0)
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+    pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "MI", border=1)
+    pdf.ln(th)
 
-	page_width = pdf.w - 2 * pdf.l_margin
+    i = 1
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        product_name = col[0] or ""
+        pdf.cell(col_width, th, product_name, border=1)
+        for value in col[1:]:
+            value = float(value)
+            if value >= 90:
+                pdf.set_fill_color(0, 255, 0)
+            elif 80 <= value < 90:
+                pdf.set_fill_color(144, 238, 144)
+            elif 70 <= value < 80:
+                pdf.set_fill_color(255, 255, 0)
+            elif 60 <= value < 70:
+                pdf.set_fill_color(255, 165, 0)
+            else:
+                pdf.set_fill_color(255, 99, 71)
+            pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
 
-	pdf.set_font('Times', 'B', 14.0)
-	s = pdf.font_size
-	pdf.cell(page_width, 0.0, f"{report_title}", align='C')
-	pdf.ln(s)
-	pdf.cell(page_width, 0.0, f"Report on Green Metrics MI Calculations", align='C')
-	pdf.ln(10)
-	pdf.set_font('Times', 'B', 12.0)
-	current_date = date.today().strftime("%d/%m/%Y")
-	pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
-	pdf.ln(10)
-	pdf.set_font("Courier", '', 12.0)
-	col_width = page_width / 3
-	pdf.ln(1)
-	th = pdf.font_size  # Define th here
-	i = 1
-
-	pdf.cell(20, th, "sNo", border=1)
-	pdf.cell(col_width, th, "Product", border=1)
-	pdf.cell(col_width, th, "MI", border=1)
-	pdf.ln(th)
-
-	for col in result:
-		pdf.cell(20, th, str(i), border=1)
-		product_name = col[0] if col[0] is not None else ""
-		pdf.cell(col_width, th, product_name, border=1)
-		for value in col[1:]:
-			value = float(value)
-			if value >= 90:
-				pdf.set_fill_color(0, 255, 0)  # Green
-			elif 80 <= value < 90:
-				pdf.set_fill_color(144, 238, 144)  # Light Green
-			elif 70 <= value < 80:
-				pdf.set_fill_color(255, 255, 0)  # Yellow
-			elif 60 <= value < 70:
-				pdf.set_fill_color(255, 165, 0)  # Orange
-			else:
-				pdf.set_fill_color(255, 99, 71)  # Tomato (Red)
-			pdf.cell(col_width, th, str(value), border=1, fill=True)
-		pdf.ln(th)
-
-	pdf.ln(10)
-	pdf.cell(th)
-
-	pdf.set_font('Times', '', 10.0)
-	pdf.cell(page_width, 0.0, '- end of report -', align='C')
-
-	cursor.close()
-
-	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
-	response.headers['Content-Disposition'] = 'attachment;filename=MIResults.pdf'
-
-	return response
+    pdf.ln(10)
+    pdf.set_font('Times', '', 10.0)
+    pdf.cell(page_width, 0.0, '- end of report -', align='C')
+    cursor.close()
+    conn.close()
+    response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
+    response.headers['Content-Disposition'] = 'attachment;filename=MIResults.pdf'
+    return response
 
 
 @app.route('/download/report_product_mp', methods=['POST', 'GET'])
 def download_report_mp():
 	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.mp FROM green_metrics.report")
+	conn = get_db_connection()
+    cursor = conn.cursor()
+	cursor.execute("SELECT report.product_name, report.mp FROM report")
 	result = cursor.fetchall()
 
 	if not result:
 		cursor.close()
+        conn.close()
 		return "No data found for the selected product."
 
 	pdf = FPDF()
@@ -1447,7 +1492,7 @@ def download_report_mp():
 	pdf.cell(page_width, 0.0, '- end of report -', align='C')
 
 	cursor.close()
-
+    conn.close()
 	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
 	response.headers['Content-Disposition'] = 'attachment;filename=MPResults.pdf'
 
@@ -1457,12 +1502,14 @@ def download_report_mp():
 @app.route('/download/report_product_efact', methods=['POST', 'GET'])
 def download_report_efact():
 	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.e_factor FROM green_metrics.report")
+	conn = get_db_connection()
+    cursor = conn.cursor()
+	cursor.execute("SELECT report.product_name, report.e_factor FROM report")
 	result = cursor.fetchall()
 
 	if not result:
 		cursor.close()
+        conn.close()
 		return "No data found for the selected product."
 
 	pdf = FPDF()
@@ -1517,7 +1564,7 @@ def download_report_efact():
 	pdf.cell(page_width, 0.0, '- end of report -', align='C')
 
 	cursor.close()
-
+    conn.close()
 	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
 	response.headers['Content-Disposition'] = 'attachment;filename=E-FACTORResults.pdf'
 
@@ -1527,12 +1574,14 @@ def download_report_efact():
 @app.route('/download/report_product_si', methods=['POST', 'GET'])
 def download_report_si():
 	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.si FROM green_metrics.report")
+	conn = get_db_connection()
+    cursor = conn.cursor()
+	cursor.execute("SELECT report.product_name, report.si FROM report")
 	result = cursor.fetchall()
 
 	if not result:
 		cursor.close()
+        conn.close()
 		return "No data found for the selected product."
 
 	pdf = FPDF()
@@ -1587,7 +1636,7 @@ def download_report_si():
 	pdf.cell(page_width, 0.0, '- end of report -', align='C')
 
 	cursor.close()
-
+    conn.close()
 	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
 	response.headers['Content-Disposition'] = 'attachment;filename=SIResults.pdf'
 
@@ -1597,12 +1646,14 @@ def download_report_si():
 @app.route('/download/report_product_tof', methods=['POST', 'GET'])
 def download_report_tof():
 	report_title = request.args.get('title', 'Green Metrics Report')
-	cursor = mysql.connection.cursor()
-	cursor.execute("SELECT report.product_name, report.tof FROM green_metrics.report")
+	conn = get_db_connection()
+    cursor = conn.cursor()
+	cursor.execute("SELECT report.product_name, report.tof FROM report")
 	result = cursor.fetchall()
 
 	if not result:
 		cursor.close()
+        conn.close()
 		return "No data found for the selected product."
 
 	pdf = FPDF()
@@ -1665,22 +1716,122 @@ def download_report_tof():
 	pdf.cell(page_width, 0.0, '- end of report -', align='C')
 
 	cursor.close()
-
+    conn.close()
 	response = Response(pdf.output(dest='S').encode('latin-1'), mimetype='application/pdf')
 	response.headers['Content-Disposition'] = 'attachment;filename=TOFResults.pdf'
 
 	return response
+
+@app.route('/download/report_product_efact', methods=['POST', 'GET'])
+def download_report_efact():
+    report_title = request.args.get('title', 'Green Metrics Report')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.e_factor FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, report_title, align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics E-Factor Calculations", align='C')
+    pdf.ln(10)
+    pdf.set_font('Times', 'B', 12.0)
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+    i = 1
+    pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "E-Factor", border=1)
+    pdf.ln(th)
+
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        pdf.cell(col_width, th, col[0] or "", border=1)
+        value = float(col[1])
+        color_by_value(pdf, value)
+        pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
+
+    pdf_footer(pdf, page_width)
+    cursor.close()
+    conn.close()
+    return make_pdf_response(pdf, "E-FACTORResults.pdf")
+
+
+@app.route('/download/report_product_si', methods=['POST', 'GET'])
+def download_report_si():
+    report_title = request.args.get('title', 'Green Metrics Report')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT report.product_name, report.si FROM report")
+    result = cursor.fetchall()
+
+    if not result:
+        cursor.close()
+        conn.close()
+        return "No data found for the selected product."
+
+    pdf = FPDF()
+    pdf.add_page()
+    page_width = pdf.w - 2 * pdf.l_margin
+    pdf.set_font('Times', 'B', 14.0)
+    s = pdf.font_size
+    pdf.cell(page_width, 0.0, report_title, align='C')
+    pdf.ln(s)
+    pdf.cell(page_width, 0.0, "Report on Green Metrics SI Calculations", align='C')
+    pdf.ln(10)
+    pdf.set_font('Times', 'B', 12.0)
+    current_date = date.today().strftime("%d/%m/%Y")
+    pdf.cell(page_width, 0.0, 'Date:- ' + current_date, align='L')
+    pdf.ln(10)
+    pdf.set_font("Courier", '', 12.0)
+    col_width = page_width / 3
+    th = pdf.font_size
+    i = 1
+    pdf.cell(20, th, "sNo", border=1)
+    pdf.cell(col_width, th, "Product", border=1)
+    pdf.cell(col_width, th, "SI", border=1)
+    pdf.ln(th)
+
+    for col in result:
+        pdf.cell(20, th, str(i), border=1)
+        pdf.cell(col_width, th, col[0] or "", border=1)
+        value = float(col[1])
+        color_by_value(pdf, value)
+        pdf.cell(col_width, th, str(value), border=1, fill=True)
+        pdf.ln(th)
+        i += 1
+
+    pdf_footer(pdf, page_width)
+    cursor.close()
+    conn.close()
+    return make_pdf_response(pdf, "SIResults.pdf")
+
 
 
 #graphs
 @app.route('/graph')
 def graph():
     user = session.get('username')
-    
-    conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT product_name, emy, ae, aef, ce, rme, oe, mp, pmi, mi, e_factor, si, wi, ton, tof FROM green_metrics.report WHERE user = %s",(user,))
+    conn = get_db_connection()
+    cursor = conn.cursor(buffered=True)
+    cursor.execute("SELECT DISTINCT product_name, emy, ae, aef, ce, rme, oe, mp, pmi, mi, e_factor, si, wi, ton, tof FROM report WHERE user = %s", (user,))
     data = cursor.fetchall()
+    cursor.close()
     conn.close()
 
     if data:
@@ -1719,10 +1870,11 @@ def graph():
 
 def get_dropdown_options():
     user = session.get('username')
-    conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT product_name, yeild, time FROM green_metrics.report WHERE user = %s",(user,))
+    conn = get_db_connection()
+    cursor = conn.cursor(buffered=True)
+    cursor.execute("SELECT product_name, yeild, time FROM report WHERE user = %s",(user,))
     data = cursor.fetchall()
+    
     conn.close()
     return data
 
@@ -1734,9 +1886,9 @@ def graph1():
         print("composite_key",composite_key)
         selected_product, yeild, time = composite_key.split(',')
 
-        conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM green_metrics.report WHERE product_name = '{selected_product}' AND yeild = {yeild} AND time = {time}")
+        conn = get_db_connection()
+        cursor = conn.cursor(buffered=True)
+        cursor.execute(f"SELECT * FROM report WHERE product_name = '{selected_product}' AND yeild = {yeild} AND time = {time}")
         row = cursor.fetchone()
         conn.close()
 
@@ -1768,9 +1920,6 @@ def graph1():
             return render_template('graph1.html', data=get_dropdown_options(), selected_product=selected_product, plot_url=plot_url)
 
     return render_template('graph1.html', data=get_dropdown_options())
-
-
-
 
 
 
